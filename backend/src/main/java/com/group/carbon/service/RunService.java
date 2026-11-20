@@ -5,6 +5,7 @@ import com.group.carbon.common.EnergyTypes;
 import com.group.carbon.common.Types.*;
 import com.group.carbon.model.*;
 import com.group.carbon.repo.*;
+import com.group.carbon.service.allocation.AllocationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,11 +33,13 @@ public class RunService {
   private final FactorRepo factorRepo;
   private final FactorVersionRepo versionRepo;
   private final PlantRepo plantRepo;
+  private final AllocationService allocationService;
 
   public RunService(CalcRunRepo runRepo, RunFactorBindingRepo bindingRepo,
                     EmissionResultRepo resultRepo, EmissionLineageRepo lineageRepo,
                     SourceRowRepo rowRepo, SourceBatchRepo batchRepo,
-                    FactorRepo factorRepo, FactorVersionRepo versionRepo, PlantRepo plantRepo) {
+                    FactorRepo factorRepo, FactorVersionRepo versionRepo, PlantRepo plantRepo,
+                    AllocationService allocationService) {
     this.runRepo = runRepo;
     this.bindingRepo = bindingRepo;
     this.resultRepo = resultRepo;
@@ -46,6 +49,7 @@ public class RunService {
     this.factorRepo = factorRepo;
     this.versionRepo = versionRepo;
     this.plantRepo = plantRepo;
+    this.allocationService = allocationService;
   }
 
   public static void validatePeriod(String period) {
@@ -128,9 +132,14 @@ public class RunService {
           .collect(Collectors.toMap(Plant::getId, p -> p));
 
       Map<GroupKey, List<SourceRow>> groups = new LinkedHashMap<>();
+      List<SourceRow> utilityRows = new ArrayList<>();
       for (SourceRow r : rows) {
-        groups.computeIfAbsent(new GroupKey(r.getPlantId(), r.getProductLineId(), r.getEnergyType()),
-            k -> new ArrayList<>()).add(r);
+        if (EnergyTypes.isSharedUtility(r.getEnergyType())) {
+          utilityRows.add(r);
+        } else {
+          groups.computeIfAbsent(new GroupKey(r.getPlantId(), r.getProductLineId(), r.getEnergyType()),
+              k -> new ArrayList<>()).add(r);
+        }
       }
 
       for (Map.Entry<GroupKey, List<SourceRow>> e : groups.entrySet()) {
@@ -140,34 +149,17 @@ public class RunService {
         Plant plant = plants.get(key.plantId());
         if (plant == null) throw BizException.badRequest("来源行引用了不存在的工厂: " + key.plantId());
 
-        RunFactorBinding binding = bindings.stream()
-            .filter(b -> b.getEnergyType().equals(key.energyType())
-                && b.getRegion().equals(plant.getRegion()))
-            .findFirst().orElse(null);
-
-        EmissionResult res = new EmissionResult();
-        res.setRunId(runId);
-        res.setPlantId(key.plantId());
-        res.setProductLineId(key.productLineId());
-        res.setScope(EnergyTypes.scopeOf(key.energyType()));
-        res.setEnergyType(key.energyType());
-        res.setActivityQty(qty);
-        res.setUnit(EnergyTypes.unitOf(key.energyType()));
-        if (binding != null) {
-          res.setFactorVersionId(binding.getFactorVersionId());
-          res.setFactorValue(binding.getValue());
-          res.setEmissionTco2e(qty.multiply(binding.getValue())
-              .divide(new BigDecimal("1000"), 6, RoundingMode.HALF_UP));
-          res.setStatus(ResultStatus.OK);
-        } else {
-          // 缺少适用批准因子：指标列为待核，不用集团平均因子兜底
-          res.setStatus(ResultStatus.PENDING_FACTOR);
-        }
+        RunFactorBinding binding = findBinding(bindings, key.energyType(), plant.getRegion());
+        EmissionResult res = buildResult(runId, key.plantId(), key.productLineId(), key.energyType(), qty, binding);
         resultRepo.save(res);
         for (SourceRow row : e.getValue()) {
           lineageRepo.save(new EmissionLineage(res.getId(), row.getId(), row.getQuantity()));
         }
       }
+
+      // 共用资源（蒸汽/压缩空气）：以已固定的分配运行为准，未分配部分单列、区间随结果保留
+      executeUtilityAllocation(runId, run.getPeriod(), bindings, utilityRows, plants);
+
       run.setStatus(RunStatus.COMPLETED);
       run.setCompletedAt(LocalDateTime.now());
       runRepo.save(run);
@@ -177,6 +169,87 @@ public class RunService {
       run.setCompletedAt(LocalDateTime.now());
       runRepo.save(run);
     }
+  }
+
+  /** 共用资源核算：按 工厂×资源 取最近固定分配依据；无固定依据时总表量整体保留为未分配。 */
+  private void executeUtilityAllocation(Long runId, String period, List<RunFactorBinding> bindings,
+                                        List<SourceRow> utilityRows, Map<Long, Plant> plants) {
+    Map<Long, Map<String, List<SourceRow>>> byPlantEnergy = new LinkedHashMap<>();
+    for (SourceRow r : utilityRows) {
+      byPlantEnergy.computeIfAbsent(r.getPlantId(), k -> new LinkedHashMap<>())
+          .computeIfAbsent(r.getEnergyType(), k -> new ArrayList<>()).add(r);
+    }
+    for (Map.Entry<Long, Map<String, List<SourceRow>>> pe : byPlantEnergy.entrySet()) {
+      Long plantId = pe.getKey();
+      Plant plant = plants.get(plantId);
+      if (plant == null) throw BizException.badRequest("来源行引用了不存在的工厂: " + plantId);
+      for (Map.Entry<String, List<SourceRow>> ee : pe.getValue().entrySet()) {
+        String energyType = ee.getKey();
+        RunFactorBinding binding = findBinding(bindings, energyType, plant.getRegion());
+        Optional<AllocationRun> fixed = allocationService.latestFixed(plantId, energyType, period);
+
+        if (fixed.isPresent()) {
+          AllocationRun alloc = fixed.get();
+          for (AllocationRecord rec : allocationService.recordsOf(alloc.getId())) {
+            if (rec.getQty().signum() == 0) continue;
+            EmissionResult res = buildResult(runId, plantId, rec.getProductLineId(), energyType,
+                rec.getQty(), binding);
+            res.setAllocationRunId(alloc.getId());
+            res.setQtyLow(rec.getQtyLow());
+            res.setQtyHigh(rec.getQtyHigh());
+            resultRepo.save(res);
+            // 血缘锚定总表读数：各产品线分配量 + 未分配量之和 = 总表总量，可沿血缘回查守恒
+            allocationService.mainRowId(alloc.getId()).ifPresent(mainRowId ->
+                lineageRepo.save(new EmissionLineage(res.getId(), mainRowId, rec.getQty())));
+          }
+          if (alloc.getUnallocatedQty().signum() > 0) {
+            EmissionResult un = buildResult(runId, plantId, null, energyType, alloc.getUnallocatedQty(), binding);
+            un.setAllocationRunId(alloc.getId());
+            resultRepo.save(un);
+            allocationService.mainRowId(alloc.getId()).ifPresent(mainRowId ->
+                lineageRepo.save(new EmissionLineage(un.getId(), mainRowId, alloc.getUnallocatedQty())));
+          }
+        } else {
+          // 无固定分配依据：不按产量平均，总表读数整体作为未分配结果，报告勾稽将保持待核
+          for (SourceRow mainRow : allocationService.mainRowsOf(plantId, energyType, period)) {
+            EmissionResult un = buildResult(runId, plantId, null, energyType, mainRow.getQuantity(), binding);
+            resultRepo.save(un);
+            lineageRepo.save(new EmissionLineage(un.getId(), mainRow.getId(), mainRow.getQuantity()));
+          }
+        }
+      }
+    }
+  }
+
+  private RunFactorBinding findBinding(List<RunFactorBinding> bindings, String energyType, String region) {
+    return bindings.stream()
+        .filter(b -> b.getEnergyType().equals(energyType) && b.getRegion().equals(region))
+        .findFirst().orElse(null);
+  }
+
+  private EmissionResult buildResult(Long runId, Long plantId, Long productLineId, String energyType,
+                                     BigDecimal qty, RunFactorBinding binding) {
+    EmissionResult res = new EmissionResult();
+    res.setRunId(runId);
+    res.setPlantId(plantId);
+    res.setProductLineId(productLineId);
+    res.setScope(EnergyTypes.scopeOf(energyType));
+    res.setEnergyType(energyType);
+    res.setActivityQty(qty);
+    res.setUnit(EnergyTypes.unitOf(energyType));
+    res.setQtyLow(qty);
+    res.setQtyHigh(qty);
+    if (binding != null) {
+      res.setFactorVersionId(binding.getFactorVersionId());
+      res.setFactorValue(binding.getValue());
+      res.setEmissionTco2e(qty.multiply(binding.getValue())
+          .divide(new BigDecimal("1000"), 6, RoundingMode.HALF_UP));
+      res.setStatus(ResultStatus.OK);
+    } else {
+      // 缺少适用批准因子：指标列为待核，不用集团平均因子兜底
+      res.setStatus(ResultStatus.PENDING_FACTOR);
+    }
+    return res;
   }
 
   // ---------------- 查询 ----------------
@@ -242,6 +315,16 @@ public class RunService {
       sources.add(s);
     }
     out.put("sources", sources);
+
+    // 共用资源结果：附带分配运行与分配证据快照（子表/系数/工时/平衡区间）
+    if (res.getAllocationRunId() != null) {
+      Map<String, Object> alloc = new LinkedHashMap<>();
+      AllocationRun ar = allocationService.findRun(res.getAllocationRunId());
+      alloc.put("allocationRun", ar);
+      alloc.put("records", allocationService.recordsOf(res.getAllocationRunId()));
+      alloc.put("evidence", allocationService.evidenceOf(res.getAllocationRunId()));
+      out.put("allocation", alloc);
+    }
     return out;
   }
 

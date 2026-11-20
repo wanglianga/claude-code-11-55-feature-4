@@ -74,6 +74,42 @@
           </el-table-column>
         </el-table>
       </div>
+
+      <div class="page-card" v-if="data?.allocation?.recentRuns?.length">
+        <h3 class="page-title">共用资源分配概览（总表 = 已分配 + 未分配，始终守恒）</h3>
+        <el-table :data="data.allocation.recentRuns" size="small">
+          <el-table-column prop="runNo" label="分配单号" width="150" />
+          <el-table-column prop="period" label="期间" width="80" />
+          <el-table-column label="资源" width="110">
+            <template #default="{ row }">{{ energyLabel(row.energyType) }}</template>
+          </el-table-column>
+          <el-table-column label="口径" width="110">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.method === 'HIERARCHY' ? 'primary' : 'success'">
+                {{ row.method === 'HIERARCHY' ? '等级法' : '平衡法' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="总表/已分配/未分配" width="230">
+            <template #default="{ row }">
+              {{ fmtNum(row.totalQty) }} / {{ fmtNum(row.allocatedQty) }} /
+              <b :class="row.unallocatedQty > 0 ? 'diff-pos' : ''">{{ fmtNum(row.unallocatedQty) }}</b>
+            </template>
+          </el-table-column>
+          <el-table-column label="不确定范围" width="160">
+            <template #default="{ row }">
+              [{{ fmtNum(row.uncertaintyLow) }}, {{ fmtNum(row.uncertaintyHigh) }}]
+            </template>
+          </el-table-column>
+          <el-table-column label="守恒" width="80">
+            <template #default="{ row }">
+              <el-tag size="small" :type="Math.abs(Number(row.conservationDiff)) <= 0.001 ? 'success' : 'danger'">
+                {{ Math.abs(Number(row.conservationDiff)) <= 0.001 ? '平衡' : '差异' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </div>
   </div>
 </template>
@@ -81,11 +117,12 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '../api'
-import { fmtNum, fmtTime } from '../store'
+import { fmtNum, fmtTime, store } from '../store'
 import StatusTag from '../components/StatusTag.vue'
 
 const data = ref(null)
 const maxPlant = ref(1)
+const energyLabel = code => store.energyLabel(code)
 
 function barWidth(v) {
   return Math.max(2, (Number(v) / maxPlant.value) * 100) + '%'

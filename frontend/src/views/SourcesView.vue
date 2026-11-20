@@ -8,7 +8,7 @@
       </el-select>
       <el-select v-model="filters.category" placeholder="类别" style="width:130px" clearable @change="load">
         <el-option label="燃料" value="FUEL" /><el-option label="电力" value="ELECTRICITY" />
-        <el-option label="采购" value="PROCUREMENT" />
+        <el-option label="采购" value="PROCUREMENT" /><el-option label="共用资源" value="UTILITY" />
       </el-select>
       <el-button @click="load">查询</el-button>
       <el-button type="primary" @click="openUpload">上传批次</el-button>
@@ -60,6 +60,7 @@
             <el-option label="燃料（范围一）" value="FUEL" />
             <el-option label="电力（范围二）" value="ELECTRICITY" />
             <el-option label="采购（范围三）" value="PROCUREMENT" />
+            <el-option label="共用资源（蒸汽/压缩空气）" value="UTILITY" />
           </el-select>
         </el-form-item>
         <el-form-item label="期间" v-if="!dialog.revising">
@@ -97,6 +98,15 @@
             <el-table-column label="供应商凭证" v-if="dialog.category === 'PROCUREMENT'">
               <template #default="{ row }">
                 <el-input v-model="row.voucherNo" placeholder="如 V-1001" />
+              </template>
+            </el-table-column>
+            <el-table-column label="关联表计" v-if="dialog.category === 'UTILITY'" width="200">
+              <template #default="{ row }">
+                <el-select v-model="row.meterId" placeholder="选择总表/子表" filterable>
+                  <el-option v-for="m in meterOptions(row)" :key="m.id"
+                             :label="`${m.meterNo}（${m.role === 'MAIN' ? '总表' : '子表'} ±${m.errorPct}%）`"
+                             :value="m.id" />
+                </el-select>
               </template>
             </el-table-column>
             <el-table-column width="60">
@@ -145,6 +155,12 @@
           </el-table-column>
           <el-table-column prop="voucherNo" label="凭证" width="90">
             <template #default="{ row }">{{ row.voucherNo || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="表计" width="130">
+            <template #default="{ row }">
+              <span v-if="row.meterId">{{ meterNo(row.meterId) }}</span>
+              <span v-else>-</span>
+            </template>
           </el-table-column>
           <el-table-column label="已核算" width="70">
             <template #default="{ row }">
@@ -205,12 +221,26 @@ const voidDlg = reactive({ visible: false, saving: false, batch: null, reason: '
 const energyOptions = computed(() =>
   store.energyTypes.filter(t => t.category === dialog.category))
 
+const meters = ref([])
+
 function categoryLabel(c) {
-  return { FUEL: '燃料', ELECTRICITY: '电力', PROCUREMENT: '采购' }[c] || c
+  return { FUEL: '燃料', ELECTRICITY: '电力', PROCUREMENT: '采购', UTILITY: '共用资源' }[c] || c
+}
+
+/** 共用资源行只能选择同工厂、同资源类型且在用的表计 */
+function meterOptions(row) {
+  return meters.value.filter(m =>
+    m.status === 'ACTIVE'
+    && m.plantId === dialog.plantId
+    && (!row.energyType || m.energyType === row.energyType))
+}
+
+function meterNo(id) {
+  return meters.value.find(m => m.id === id)?.meterNo || `#${id}`
 }
 
 function newRow() {
-  return { plantId: null, productLineId: null, energyType: null, quantity: 1, voucherNo: '' }
+  return { plantId: null, productLineId: null, energyType: null, quantity: 1, voucherNo: '', meterId: null }
 }
 
 async function load() {
@@ -238,7 +268,7 @@ async function openRevise(row) {
   const resp = await api.get(`/batches/${row.id}`)
   const rows = resp.data.rows.map(r => ({
     plantId: r.plantId, productLineId: r.productLineId, energyType: r.energyType,
-    quantity: Number(r.quantity), voucherNo: r.voucherNo || ''
+    quantity: Number(r.quantity), voucherNo: r.voucherNo || '', meterId: r.meterId || null
   }))
   Object.assign(dialog, {
     visible: true, revising: true, saving: false,
@@ -255,7 +285,7 @@ async function submitDialog() {
       plantId: dialog.plantId, category: dialog.category, period: dialog.period,
       rows: dialog.rows.map(r => ({
         plantId: r.plantId, productLineId: r.productLineId, energyType: r.energyType,
-        quantity: r.quantity, voucherNo: r.voucherNo || null
+        quantity: r.quantity, voucherNo: r.voucherNo || null, meterId: r.meterId || null
       }))
     }
     if (dialog.revising) {
@@ -317,7 +347,10 @@ async function doVoid() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  api.get('/allocations/meters').then(r => { meters.value = r.data }).catch(() => {})
+})
 </script>
 
 <style scoped>

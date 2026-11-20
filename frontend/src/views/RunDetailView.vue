@@ -51,6 +51,15 @@
         <el-table-column label="活动量" width="130">
           <template #default="{ row }">{{ fmtNum(row.activityQty) }} {{ row.unit }}</template>
         </el-table-column>
+        <el-table-column label="活动量区间" width="180">
+          <template #default="{ row }">
+            <span v-if="row.qtyLow != null && (Number(row.qtyLow) !== Number(row.activityQty) || Number(row.qtyHigh) !== Number(row.activityQty))">
+              [{{ fmtNum(row.qtyLow) }}, {{ fmtNum(row.qtyHigh) }}]
+            </span>
+            <el-tag v-else-if="row.allocationRunId" size="small" type="info">分配点值</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="因子值" width="110">
           <template #default="{ row }">{{ row.factorValue ?? '-' }}</template>
         </el-table-column>

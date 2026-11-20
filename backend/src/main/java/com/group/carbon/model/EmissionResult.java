@@ -29,6 +29,14 @@ public class EmissionResult {
   private BigDecimal factorValue;
   @Column(name = "emission_tco2e")
   private BigDecimal emissionTco2e;
+  /** 共用资源结果所依据的已固定分配运行 */
+  @Column(name = "allocation_run_id")
+  private Long allocationRunId;
+  /** 平衡法可行区间对应的活动量上下界（排放区间由其乘同一因子得到） */
+  @Column(name = "qty_low")
+  private BigDecimal qtyLow;
+  @Column(name = "qty_high")
+  private BigDecimal qtyHigh;
   @Enumerated(EnumType.STRING)
   @Column(nullable = false)
   private ResultStatus status;
@@ -55,6 +63,12 @@ public class EmissionResult {
   public void setFactorValue(BigDecimal factorValue) { this.factorValue = factorValue; }
   public BigDecimal getEmissionTco2e() { return emissionTco2e; }
   public void setEmissionTco2e(BigDecimal emissionTco2e) { this.emissionTco2e = emissionTco2e; }
+  public Long getAllocationRunId() { return allocationRunId; }
+  public void setAllocationRunId(Long allocationRunId) { this.allocationRunId = allocationRunId; }
+  public BigDecimal getQtyLow() { return qtyLow; }
+  public void setQtyLow(BigDecimal qtyLow) { this.qtyLow = qtyLow; }
+  public BigDecimal getQtyHigh() { return qtyHigh; }
+  public void setQtyHigh(BigDecimal qtyHigh) { this.qtyHigh = qtyHigh; }
   public ResultStatus getStatus() { return status; }
   public void setStatus(ResultStatus status) { this.status = status; }
 }

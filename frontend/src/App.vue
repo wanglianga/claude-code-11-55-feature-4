@@ -7,6 +7,7 @@
                text-color="#b8c7d9" active-text-color="#ffffff">
         <el-menu-item index="/"><el-icon><DataAnalysis /></el-icon>仪表盘</el-menu-item>
         <el-menu-item index="/sources"><el-icon><Upload /></el-icon>来源批次</el-menu-item>
+        <el-menu-item index="/allocations"><el-icon><Share /></el-icon>共用资源分配</el-menu-item>
         <el-menu-item index="/factors"><el-icon><Collection /></el-icon>因子目录</el-menu-item>
         <el-menu-item index="/runs"><el-icon><VideoPlay /></el-icon>核算运行</el-menu-item>
         <el-menu-item index="/impacts"><el-icon><Warning /></el-icon>影响评估</el-menu-item>
@@ -32,7 +33,7 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { DataAnalysis, Upload, Collection, VideoPlay, Warning, Document } from '@element-plus/icons-vue'
+import { DataAnalysis, Upload, Collection, VideoPlay, Warning, Document, Share } from '@element-plus/icons-vue'
 import { store } from './store'
 
 const router = useRouter()

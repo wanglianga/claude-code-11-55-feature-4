@@ -34,13 +34,15 @@ public class BatchService {
   private final ProductLineRepo lineRepo;
   private final CalcRunRepo runRepo;
   private final ReportVersionRepo versionRepo;
+  private final UtilityMeterRepo meterRepo;
   private final ImpactService impactService;
   private final BatchService self;
 
   public BatchService(SourceBatchRepo batchRepo, SourceRowRepo rowRepo,
                       EmissionLineageRepo lineageRepo, PlantRepo plantRepo,
                       ProductLineRepo lineRepo, CalcRunRepo runRepo,
-                      ReportVersionRepo versionRepo, @Lazy ImpactService impactService,
+                      ReportVersionRepo versionRepo, UtilityMeterRepo meterRepo,
+                      @Lazy ImpactService impactService,
                       @Lazy BatchService self) {
     this.batchRepo = batchRepo;
     this.rowRepo = rowRepo;
@@ -49,11 +51,12 @@ public class BatchService {
     this.lineRepo = lineRepo;
     this.runRepo = runRepo;
     this.versionRepo = versionRepo;
+    this.meterRepo = meterRepo;
     this.impactService = impactService;
     this.self = self;
   }
 
-  private static final Set<String> CATEGORIES = Set.of("FUEL", "ELECTRICITY", "PROCUREMENT");
+  private static final Set<String> CATEGORIES = Set.of("FUEL", "ELECTRICITY", "PROCUREMENT", "UTILITY");
 
   // ---------------- 查询 ----------------
 
@@ -137,6 +140,14 @@ public class BatchService {
           throw BizException.badRequest("批次内供应商凭证号重复: " + row.voucherNo());
         }
       }
+      if ("UTILITY".equals(batch.getCategory())) {
+        if (row.meterId() == null) {
+          throw BizException.badRequest("共用资源行必须关联总表或子表（第 " + rows.indexOf(row) + 1 + " 行缺 meterId）");
+        }
+        if (meterRepo.findById(row.meterId()).isEmpty()) {
+          throw BizException.badRequest("表计不存在: " + row.meterId());
+        }
+      }
     }
   }
 
@@ -154,6 +165,7 @@ public class BatchService {
       row.setQuantity(input.quantity());
       row.setUnit(meta.unit());
       row.setVoucherNo(input.voucherNo());
+      row.setMeterId(input.meterId());
       row.setPeriod(batch.getPeriod());
       row.setStatus(RowStatus.ACTIVE);
       rowRepo.save(row);

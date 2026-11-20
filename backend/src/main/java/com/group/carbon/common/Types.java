@@ -34,4 +34,19 @@ public final class Types {
   public enum ImpactStatus { OPEN, ACKNOWLEDGED, RESOLVED }
 
   public enum RestatementStatus { PROPOSED, ACCEPTED, REJECTED, RESOLVED }
+
+  /** 分配主口径：HIERARCHY=证据等级依次使用子表/校准系数/工时；BALANCE=总表+误差界+产能平衡求解。两者均为正式口径 */
+  public enum AllocationMethod { HIERARCHY, BALANCE }
+
+  /** 分配运行状态：草稿 / 已固定（批次核算依据，不可改写）/ 被取代（后补表计产生新版本） */
+  public enum AllocationStatus { DRAFT, FIXED, SUPERSEDED }
+
+  /** 表计角色：MAIN=总表（共用资源总量）；SUB=产品线局部子表 */
+  public enum MeterRole { MAIN, SUB }
+
+  /** 表计状态：在用 / 停用（工艺改造后旧表停用，历史读数保留） */
+  public enum MeterStatus { ACTIVE, RETIRED }
+
+  /** 分配证据等级：SUB_METER 子表 / COEF 校准系数 / WORK_HOUR 工时 / BALANCE 平衡求解 / UNALLOCATED 未分配 */
+  public enum EvidenceGrade { SUB_METER, COEF, WORK_HOUR, BALANCE, UNALLOCATED }
 }

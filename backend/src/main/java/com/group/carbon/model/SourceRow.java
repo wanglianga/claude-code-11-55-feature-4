@@ -27,6 +27,9 @@ public class SourceRow {
   private String unit;
   @Column(name = "voucher_no")
   private String voucherNo;
+  /** 共用资源行关联的表计读数（总表/子表） */
+  @Column(name = "meter_id")
+  private Long meterId;
   @Column(nullable = false)
   private String period;
   @Enumerated(EnumType.STRING)
@@ -53,6 +56,8 @@ public class SourceRow {
   public void setUnit(String unit) { this.unit = unit; }
   public String getVoucherNo() { return voucherNo; }
   public void setVoucherNo(String voucherNo) { this.voucherNo = voucherNo; }
+  public Long getMeterId() { return meterId; }
+  public void setMeterId(Long meterId) { this.meterId = meterId; }
   public String getPeriod() { return period; }
   public void setPeriod(String period) { this.period = period; }
   public RowStatus getStatus() { return status; }

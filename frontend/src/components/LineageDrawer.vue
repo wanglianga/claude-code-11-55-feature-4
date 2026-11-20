@@ -49,6 +49,54 @@
           <template #default="{ row }">{{ row.verifiedBy || '-' }}</template>
         </el-table-column>
       </el-table>
+
+      <template v-if="data.allocation">
+        <h4>共用资源分配依据（{{ data.allocation.allocationRun.runNo }} ·
+          {{ data.allocation.allocationRun.method === 'HIERARCHY' ? '等级法' : '平衡求解法' }} ·
+          {{ allocStatusLabel(data.allocation.allocationRun.status) }}）</h4>
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="总表总量">
+            {{ fmtNum(data.allocation.allocationRun.totalQty) }} {{ data.result.unit }}
+          </el-descriptions-item>
+          <el-descriptions-item label="已分配 / 未分配">
+            {{ fmtNum(data.allocation.allocationRun.allocatedQty) }} /
+            <b :class="data.allocation.allocationRun.unallocatedQty > 0 ? 'diff-pos' : ''">
+              {{ fmtNum(data.allocation.allocationRun.unallocatedQty) }}
+            </b>
+          </el-descriptions-item>
+          <el-descriptions-item label="守恒差异">
+            {{ fmtNum(data.allocation.allocationRun.conservationDiff) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="不确定范围">
+            [{{ fmtNum(data.allocation.allocationRun.uncertaintyLow) }},
+            {{ fmtNum(data.allocation.allocationRun.uncertaintyHigh) }}]
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="data.allocation.records" size="small" border style="margin-top:8px">
+          <el-table-column label="产品线" width="120">
+            <template #default="{ row }">{{ store.lineName(row.productLineId) }}</template>
+          </el-table-column>
+          <el-table-column label="点值" width="100">
+            <template #default="{ row }">{{ fmtNum(row.qty) }}</template>
+          </el-table-column>
+          <el-table-column label="可行区间" width="170">
+            <template #default="{ row }">[{{ fmtNum(row.qtyLow) }}, {{ fmtNum(row.qtyHigh) }}]</template>
+          </el-table-column>
+          <el-table-column label="证据等级" width="100">
+            <template #default="{ row }">{{ gradeLabel(row.evidenceGrade) }}</template>
+          </el-table-column>
+        </el-table>
+        <el-table :data="data.allocation.evidence" size="small" border style="margin-top:8px">
+          <el-table-column label="等级" width="90">
+            <template #default="{ row }">{{ gradeLabel(row.evidenceGrade) }}</template>
+          </el-table-column>
+          <el-table-column prop="refLabel" label="证据来源" width="220" show-overflow-tooltip />
+          <el-table-column label="计入量" width="100">
+            <template #default="{ row }">{{ fmtNum(row.appliedQty) }}</template>
+          </el-table-column>
+          <el-table-column prop="detail" label="计算说明" show-overflow-tooltip />
+        </el-table>
+      </template>
     </div>
     <el-skeleton v-else :rows="8" animated />
   </el-drawer>
@@ -74,6 +122,13 @@ watch(() => [props.visible, props.resultId], async ([v, id]) => {
     data.value = resp.data
   }
 }, { immediate: true })
+
+function gradeLabel(g) {
+  return { SUB_METER: '子表', COEF: '校准系数', WORK_HOUR: '工时', BALANCE: '平衡求解', UNALLOCATED: '未分配' }[g] || g
+}
+function allocStatusLabel(s) {
+  return { DRAFT: '草稿', FIXED: '已固定', SUPERSEDED: '已取代' }[s] || s
+}
 </script>
 
 <style scoped>

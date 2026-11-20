@@ -19,11 +19,13 @@ public class DashboardService {
   private final ImpactAssessmentRepo impactRepo;
   private final RestatementRepo restatementRepo;
   private final PlantRepo plantRepo;
+  private final AllocationRunRepo allocationRunRepo;
 
   public DashboardService(ReportRepo reportRepo, ReportVersionRepo versionRepo,
                           ReportItemRepo itemRepo, CalcRunRepo runRepo,
                           EmissionResultRepo resultRepo, ImpactAssessmentRepo impactRepo,
-                          RestatementRepo restatementRepo, PlantRepo plantRepo) {
+                          RestatementRepo restatementRepo, PlantRepo plantRepo,
+                          AllocationRunRepo allocationRunRepo) {
     this.reportRepo = reportRepo;
     this.versionRepo = versionRepo;
     this.itemRepo = itemRepo;
@@ -32,6 +34,7 @@ public class DashboardService {
     this.impactRepo = impactRepo;
     this.restatementRepo = restatementRepo;
     this.plantRepo = plantRepo;
+    this.allocationRunRepo = allocationRunRepo;
   }
 
   public Map<String, Object> summary() {
@@ -93,6 +96,15 @@ public class DashboardService {
 
     out.put("recentRuns", runs.stream().limit(6).toList());
     out.put("recentImpacts", impactRepo.findAllByOrderByIdDesc().stream().limit(6).toList());
+
+    // 共用资源分配概览：最近分配运行（含未分配量与守恒状态）
+    List<AllocationRun> allocRuns = allocationRunRepo.findAllByOrderByIdDesc().stream().limit(8).toList();
+    long unbalanced = allocRuns.stream()
+        .filter(a -> a.getConservationDiff() != null && a.getConservationDiff().abs().signum() != 0).count();
+    Map<String, Object> alloc = new LinkedHashMap<>();
+    alloc.put("recentRuns", allocRuns);
+    alloc.put("unbalancedCount", unbalanced);
+    out.put("allocation", alloc);
     return out;
   }
 }

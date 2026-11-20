@@ -16,6 +16,15 @@ public final class EnergyTypes {
     MAP.put("GRID_ELEC",   new Meta("SCOPE2", "kWh", "外购电力", "ELECTRICITY"));
     MAP.put("PURCH_STEEL", new Meta("SCOPE3", "t",   "采购钢材", "PROCUREMENT"));
     MAP.put("PURCH_ALU",   new Meta("SCOPE3", "t",   "采购铝材", "PROCUREMENT"));
+    // 共用工程资源：工厂锅炉/空压站产出，多产品线共用，需经分配证据链后进入核算
+    MAP.put("STEAM",    new Meta("SCOPE2", "t",    "共用蒸汽",   "UTILITY"));
+    MAP.put("COMP_AIR", new Meta("SCOPE2", "Nm3",  "共用压缩空气", "UTILITY"));
+  }
+
+  /** 需要走共用资源分配流程的能源类型。 */
+  public static boolean isSharedUtility(String energyType) {
+    Meta m = MAP.get(energyType);
+    return m != null && "UTILITY".equals(m.category());
   }
 
   public static Meta metaOf(String energyType) {
